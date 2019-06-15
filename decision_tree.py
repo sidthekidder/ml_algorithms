@@ -5,13 +5,13 @@ import os
 import math
 from sklearn.model_selection import train_test_split
 
-def entropy(y):
+def entropy(y, wts):
     counter = {}
-    for i in y:
+    for idx, i in enumerate(y):
         if i in counter:
-            counter[i] += 1
+            counter[i] += wts[idx]*1
         else:
-            counter[i] = 1
+            counter[i] = wts[idx]*1
     
     entr = 0
     for k,v in counter.items():
@@ -19,7 +19,7 @@ def entropy(y):
     
     return entr
 
-def id3(x, y, attribute_value_pairs=None, depth=0, max_depth=5):
+def id3(x, y, attribute_value_pairs=None, depth=0, max_depth=5, weights=[]):
     """
     creates a decision tree in dictionary format -
     {(3, 2, False):
@@ -30,7 +30,12 @@ def id3(x, y, attribute_value_pairs=None, depth=0, max_depth=5):
             {(2, 1, True): 0,
              (2, 1, False): 1}},
      (3, 2, True): 1}
+
+     weights are applied according to 
     """
+    # initialize default weights
+    if len(weights) == 0:
+        weights = np.ones(len(x)) / len(x)
 
     # initialize attribute-value pairs
     if attribute_value_pairs == None:
@@ -76,7 +81,7 @@ def id3(x, y, attribute_value_pairs=None, depth=0, max_depth=5):
 
     max_attr = None
     max_info_gain = 0
-    cur_entropy = entropy(y)
+    cur_entropy = entropy(y, weights)
 
     # for each possible column/value pair, split that column into 1s and 0s based on if it is equal to the value
     # save attribute which gives max possible information gain
@@ -87,17 +92,21 @@ def id3(x, y, attribute_value_pairs=None, depth=0, max_depth=5):
 
         # calculate mutual information if we choose this column to split on with this value
         new_label_split_true = []
+        new_label_split_true_weights = []
         new_label_split_false = []
+        new_label_split_false_weights = []
 
-        before_entropy = entropy(y)
+        before_entropy = entropy(y, weights)
         for idx, row in enumerate(new_column):
             if row == 1:
                 new_label_split_true.append(y[idx])
+                new_label_split_true_weights.append(weights[idx])
             else:
                 new_label_split_false.append(y[idx])
+                new_label_split_false_weights.append(weights[idx])
 
-        possible_entropy = (len(new_label_split_true)/len(y)) * entropy(new_label_split_true) + \
-                            (len(new_label_split_false)/len(y)) * entropy(new_label_split_false)
+        possible_entropy = (len(new_label_split_true)/len(y)) * entropy(new_label_split_true, new_label_split_true_weights) + \
+                            (len(new_label_split_false)/len(y)) * entropy(new_label_split_false, new_label_split_false_weights)
 
         mutual_info = abs(before_entropy - possible_entropy)
 
@@ -147,7 +156,7 @@ def predict_example(x, tree):
         else:
             return predict_example(x, false_option)
 
-def print_tree(tree, depth):
+def print_tree(tree, depth=0):
     if type(tree) is not dict:
         print(depth*"\t" + str(tree))
         return
@@ -156,27 +165,24 @@ def print_tree(tree, depth):
         print(depth*"\t" + "data[" + str(key[0]) + "] == " + str(key[1]) + "? " + str(key[2]))
         print_tree(tree[key], depth+1)
 
-# load training data
-M = np.genfromtxt('./Skin_NonSkin.txt', missing_values=0, delimiter='\t', dtype=int)
-ytrn = M[:, 3] # select prediction column
-Xtrn = M[:, :3] # select all other columns
+if __name__ == "__main__":
+    # load training data
+    dataset = np.genfromtxt('./Skin_NonSkin.txt', missing_values=0, delimiter='\t', dtype=int)
+    ytrn = dataset[:, 3] # select prediction column
+    Xtrn = dataset[:, :3] # select all other columns
 
-Xtrn, Xtst, ytrn, ytst = train_test_split(Xtrn, ytrn, test_size=0.999, random_state=42)
+    Xtrn, Xtst, ytrn, ytst = train_test_split(Xtrn, ytrn, test_size=0.99, random_state=42)
 
-# learn decision tree
-print("Starting learning using id3 recursive algorithm.")
-decision_tree = id3(Xtrn, ytrn, max_depth=3)
-print("Decision tree representation:\n")
-print_tree(decision_tree, 0)
+    # learn decision tree
+    print("Starting learning using id3 recursive algorithm.")
+    decision_tree = id3(Xtrn, ytrn, max_depth=3)
+    print("Decision tree representation:\n")
+    print_tree(decision_tree)
 
-# predict examples
-y_pred = [predict_example(x, decision_tree) for x in Xtst]
+    # predict examples
+    y_pred = [predict_example(x, decision_tree) for x in Xtst]
 
-# compute average error
-diff = 0
-for idx, label in enumerate(ytst):
-    if ytst[idx] != y_pred[idx]:
-        diff += 1
-tst_err = diff/len(ytst)
+    # compute testing error
+    tst_err = sum(ytst != y_pred) / len(ytst)
 
-print("\nTest error: " + str(tst_err*100) + "%.")
+    print("\nTest error: " + str(tst_err*100) + "%.")
